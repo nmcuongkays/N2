@@ -127,9 +127,12 @@ nav button.on::after{content:"";width:18px;height:3px;background:var(--hanko);bo
 .pill-red{background:var(--hanko);color:#fff;border-radius:10px;font-size:10px;padding:1px 7px;font-weight:700;vertical-align:2px}
 .note-src{font-size:11px;color:var(--muted);text-align:center;margin:14px 0 4px;line-height:1.6}
 
-/* Mazii lookup bubble */
-#maziiBtn{position:fixed;z-index:200;display:none;background:var(--indigo-deep);color:#fff;border:none;border-radius:20px;padding:8px 14px;font-size:13px;font-weight:700;font-family:inherit;box-shadow:0 4px 12px rgba(0,0,0,.25);cursor:pointer;white-space:nowrap}
-#maziiBtn::after{content:"";position:absolute;bottom:-6px;left:50%;transform:translateX(-50%);border:6px solid transparent;border-top-color:var(--indigo-deep);border-bottom:none}
+/* Mazii lookup bar — thanh cố định dưới màn hình, không đụng menu copy/paste của iOS */
+#maziiBar{position:fixed;left:8px;right:8px;bottom:calc(64px + env(safe-area-inset-bottom));z-index:200;display:none;align-items:center;gap:8px;background:var(--indigo-deep);color:#fff;border-radius:12px;padding:10px 12px;box-shadow:0 4px 14px rgba(0,0,0,.3)}
+#maziiBar .sel-word{flex:1;font-size:15px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:"Hiragino Mincho ProN","Yu Mincho",serif}
+#maziiBar button{border:none;border-radius:8px;padding:8px 13px;font-size:13px;font-weight:700;font-family:inherit;cursor:pointer;white-space:nowrap}
+#maziiBar .app-btn{background:var(--hanko);color:#fff}
+#maziiBar .web-btn{background:rgba(255,255,255,.15);color:#fff}
 </style>
 </head>
 <body>
@@ -2257,58 +2260,78 @@ const App = (() => {
   };
 })();
 </script>
-<button id="maziiBtn">🔍 Tra Mazii</button>
+<div id="maziiBar">
+  <span class="sel-word" id="maziiWord"></span>
+  <button class="app-btn" id="maziiApp">📱 Mazii</button>
+  <button class="web-btn" id="maziiWeb">🌐 Web</button>
+</div>
 
 <script>
-/* ===== Bôi đen chữ → tra Mazii ===== */
+/* ===== Bôi đen chữ → tra Mazii (app scheme + fallback web) ===== */
 (function(){
-  const btn = document.getElementById("maziiBtn");
+  const bar = document.getElementById("maziiBar");
+  const wordEl = document.getElementById("maziiWord");
   let currentText = "";
+  let lastOpen = 0; // chống double-tap khi rời/quay lại app
 
   function getSel(){
     const sel = window.getSelection();
     if(!sel || sel.isCollapsed) return null;
     const t = sel.toString().trim();
-    // Chỉ nhận đoạn ngắn hợp lý để tra từ (bỏ qua bôi cả đoạn dài)
     if(!t || t.length > 25) return null;
-    try{ return {text:t, rect: sel.getRangeAt(0).getBoundingClientRect()}; }
-    catch(e){ return null; }
+    return t;
   }
 
-  function update(){
-    const s = getSel();
-    if(!s || !s.rect || (s.rect.width===0 && s.rect.height===0)){
-      btn.style.display = "none"; currentText = ""; return;
-    }
-    currentText = s.text;
-    btn.style.display = "block";
-    // Đặt bong bóng phía trên vùng bôi đen, kẹp trong màn hình
-    const bw = btn.offsetWidth || 110;
-    let left = s.rect.left + s.rect.width/2 - bw/2;
-    left = Math.max(8, Math.min(left, window.innerWidth - bw - 8));
-    let top = s.rect.top - 46;
-    if(top < 8) top = s.rect.bottom + 12; // không đủ chỗ trên thì hiện dưới
-    btn.style.left = left + "px";
-    btn.style.top = top + "px";
-  }
-
-  // selectionchange bắn liên tục khi kéo chọn trên mobile → debounce nhẹ
   let timer = null;
   document.addEventListener("selectionchange", ()=>{
     clearTimeout(timer);
-    timer = setTimeout(update, 250);
+    timer = setTimeout(()=>{
+      const t = getSel();
+      if(t){
+        currentText = t;
+        wordEl.textContent = t;
+        bar.style.display = "flex";
+      } else {
+        bar.style.display = "none";
+        currentText = "";
+      }
+    }, 250);
   });
-  window.addEventListener("scroll", ()=>{ btn.style.display="none"; }, {passive:true});
 
-  // touchstart để bắt trước khi selection bị xoá do tap; preventDefault giữ vùng bôi đen
-  function openMazii(e){
+  function guard(){
+    const now = Date.now();
+    if(now - lastOpen < 3500) return false; // đã mở trong 3.5s gần đây → bỏ qua
+    lastOpen = now;
+    return true;
+  }
+
+  // Mở APP Mazii: bắt buộc dùng location.href với scheme mazii:// (window.open sẽ bị chặn)
+  document.getElementById("maziiApp").addEventListener("touchstart", function(e){
+    e.preventDefault(); e.stopPropagation();
+    if(!currentText || !guard()) return;
+    window.location.href = "mazii://search?query=" + encodeURIComponent(currentText);
+    bar.style.display = "none";
+  }, {passive:false});
+  document.getElementById("maziiApp").addEventListener("mousedown", function(e){
+    e.preventDefault();
+    if(!currentText || !guard()) return;
+    window.location.href = "mazii://search?query=" + encodeURIComponent(currentText);
+    bar.style.display = "none";
+  });
+
+  // Fallback web cho máy chưa cài app
+  document.getElementById("maziiWeb").addEventListener("touchstart", function(e){
     e.preventDefault(); e.stopPropagation();
     if(!currentText) return;
     window.open("https://mazii.net/vi-VN/search/word/javi/" + encodeURIComponent(currentText), "_blank");
-    btn.style.display = "none";
-  }
-  btn.addEventListener("touchstart", openMazii, {passive:false});
-  btn.addEventListener("mousedown", openMazii);
+    bar.style.display = "none";
+  }, {passive:false});
+  document.getElementById("maziiWeb").addEventListener("mousedown", function(e){
+    e.preventDefault();
+    if(!currentText) return;
+    window.open("https://mazii.net/vi-VN/search/word/javi/" + encodeURIComponent(currentText), "_blank");
+    bar.style.display = "none";
+  });
 })();
 </script>
 </body>
