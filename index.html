@@ -131,7 +131,7 @@ nav button.on::after{content:"";width:18px;height:3px;background:var(--hanko);bo
 #maziiBar{position:fixed;left:8px;right:8px;bottom:calc(64px + env(safe-area-inset-bottom));z-index:200;display:none;align-items:center;gap:8px;background:var(--indigo-deep);color:#fff;border-radius:12px;padding:10px 12px;box-shadow:0 4px 14px rgba(0,0,0,.3)}
 #maziiBar .sel-word{flex:1;font-size:15px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:"Hiragino Mincho ProN","Yu Mincho",serif}
 #maziiBar button{border:none;border-radius:8px;padding:8px 13px;font-size:13px;font-weight:700;font-family:inherit;cursor:pointer;white-space:nowrap}
-#maziiBar .app-btn{background:var(--hanko);color:#fff}
+#maziiBar .app-btn{background:var(--hanko);color:#fff;text-decoration:none;display:inline-flex;align-items:center;border:none;border-radius:8px;padding:8px 13px;font-size:13px;font-weight:700}
 #maziiBar .web-btn{background:rgba(255,255,255,.15);color:#fff}
 </style>
 </head>
@@ -2262,23 +2262,29 @@ const App = (() => {
 </script>
 <div id="maziiBar">
   <span class="sel-word" id="maziiWord"></span>
-  <button class="app-btn" id="maziiApp">📱 Mazii</button>
+  <a class="app-btn" id="maziiApp" href="#" role="button">📱 Mazii</a>
   <button class="web-btn" id="maziiWeb">🌐 Web</button>
 </div>
 
 <script>
-/* ===== Bôi đen chữ → tra Mazii (app scheme + fallback web) ===== */
+/* ===== Bôi đen chữ → tra Mazii =====
+   Cốt lõi: nút mở app phải là THẺ <a> với href="mazii://..." thật.
+   Chạm vào <a> = điều hướng do người dùng → iOS mở app KHÔNG hỏi.
+   (JS gán window.location.href sẽ bị hỏi "trang web tìm cách mở ứng dụng khác") */
 (function(){
   const bar = document.getElementById("maziiBar");
   const wordEl = document.getElementById("maziiWord");
+  const appBtn = document.getElementById("maziiApp");
   let currentText = "";
-  let lastOpen = 0; // chống double-tap khi rời/quay lại app
+  let lastOpen = 0;
+
+  const hasJP = s => /[\u3040-\u30FF\u4E00-\u9FFF\u3005]/.test(s); // chỉ hiện khi có chữ Nhật
 
   function getSel(){
     const sel = window.getSelection();
     if(!sel || sel.isCollapsed) return null;
     const t = sel.toString().trim();
-    if(!t || t.length > 25) return null;
+    if(!t || t.length > 25 || !hasJP(t)) return null;
     return t;
   }
 
@@ -2290,43 +2296,32 @@ const App = (() => {
       if(t){
         currentText = t;
         wordEl.textContent = t;
+        // Gán href TRƯỚC khi người dùng chạm — điều kiện để iOS mở thẳng app
+        appBtn.href = "mazii://search?query=" + encodeURIComponent(t);
         bar.style.display = "flex";
       } else {
         bar.style.display = "none";
         currentText = "";
+        appBtn.href = "#";
       }
     }, 250);
   });
 
-  function guard(){
+  // KHÔNG preventDefault khi hợp lệ — để thẻ <a> tự điều hướng theo cách native.
+  // Chỉ chặn khi double-tap trong 3.5s (tránh iOS cảnh báo mở lặp).
+  appBtn.addEventListener("click", function(e){
     const now = Date.now();
-    if(now - lastOpen < 3500) return false; // đã mở trong 3.5s gần đây → bỏ qua
+    if(!currentText || now - lastOpen < 3500){ e.preventDefault(); return; }
     lastOpen = now;
-    return true;
-  }
-
-  // Mở APP Mazii: bắt buộc dùng location.href với scheme mazii:// (window.open sẽ bị chặn)
-  document.getElementById("maziiApp").addEventListener("touchstart", function(e){
-    e.preventDefault(); e.stopPropagation();
-    if(!currentText || !guard()) return;
-    window.location.href = "mazii://search?query=" + encodeURIComponent(currentText);
-    bar.style.display = "none";
-  }, {passive:false});
-  document.getElementById("maziiApp").addEventListener("mousedown", function(e){
-    e.preventDefault();
-    if(!currentText || !guard()) return;
-    window.location.href = "mazii://search?query=" + encodeURIComponent(currentText);
-    bar.style.display = "none";
+    setTimeout(()=>{
+      try{ window.getSelection().removeAllRanges(); }catch(err){}
+      bar.style.display = "none";
+    }, 120);
+    // không preventDefault → iOS mở app Mazii trực tiếp
   });
 
   // Fallback web cho máy chưa cài app
-  document.getElementById("maziiWeb").addEventListener("touchstart", function(e){
-    e.preventDefault(); e.stopPropagation();
-    if(!currentText) return;
-    window.open("https://mazii.net/vi-VN/search/word/javi/" + encodeURIComponent(currentText), "_blank");
-    bar.style.display = "none";
-  }, {passive:false});
-  document.getElementById("maziiWeb").addEventListener("mousedown", function(e){
+  document.getElementById("maziiWeb").addEventListener("click", function(e){
     e.preventDefault();
     if(!currentText) return;
     window.open("https://mazii.net/vi-VN/search/word/javi/" + encodeURIComponent(currentText), "_blank");
@@ -2334,5 +2329,7 @@ const App = (() => {
   });
 })();
 </script>
+</body>
+
 </body>
 </html>
